@@ -1,0 +1,10 @@
+Revision history for Set::Toolkit
+
+0.01    Date/time
+        * Basic construction
+        * Mixed data-type sets.
+        * Support for fairly complex querying of sets through ->search() and
+          ->find().
+        * The ability to view sets as ordered or unordered.
+        * The ability to view sets as unique or duplicable.
+
