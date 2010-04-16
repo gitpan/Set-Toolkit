@@ -1,4 +1,9 @@
 package Set::Toolkit;
+use strict;
+use warnings;
+
+use vars qw(VERSION);
+$VERSION = '0.02';
 
 sub new {
   my $class = shift;
@@ -278,7 +283,7 @@ Set::Toolkit - searchable, orderable, flexible sets of (almost) anything.
 
 =head1 VERSION
 
-Version 0.01
+Version 0.02
 
 =head1 SYNOPSIS
 
