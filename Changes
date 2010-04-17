@@ -1,5 +1,8 @@
 Revision history for Set::Toolkit
 
+0.03    2010-04-16 22:22:15
+        * Still trying to figure out how to upload to CPAN =)
+
 0.02    2010-04-16 17:30:00
         * Changed the files and dirs so they aren't world-writable (so I can
           upload to CPAN).

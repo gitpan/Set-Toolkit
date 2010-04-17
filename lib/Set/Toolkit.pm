@@ -2,8 +2,8 @@ package Set::Toolkit;
 use strict;
 use warnings;
 
-use vars qw(VERSION);
-$VERSION = '0.02';
+use vars qw($VERSION);
+$VERSION = '0.03';
 
 sub new {
   my $class = shift;
@@ -393,6 +393,78 @@ None at this time.
 
 =head1 FUNCTIONS
 
+=head2 Construction
+
+=head3 new
+
+Creates a new set toolkit object.  Right now it doesn't take parameters,
+because I have not codified how it should work.
+
+=head2 Set manipulation
+
+=head3 B<insert>
+
+Insert new elements into the set.  
+
+  ### Create a set object.
+  $set = Set::Toolkit->new();
+  
+  ### Insert two scalars, an array ref, and a hash ref.
+  $set->insert('a', 'b', [2,4], {some=>'object'});
+
+Duplicate entries will be silently ignored when the set's B<is_unique>
+constraint it set.  (This behavior is likely to change in the future.  What
+will probably happen later is the element will be added and masked.  That
+will probably be a setting =)
+
+=head3 B<remove>
+
+Removes elements from the set.
+
+  ### Create a set object.
+  $set = Set::Toolkit->new();
+  
+  ### Insert two scalars, an array ref, and a hash ref; the set size will
+  ### be 4.
+  $set->insert('a', 'b', [2,4], {some=>'object'});
+
+  ### Remove the scalar 'b' from the set.  The set size will be 3.
+  $set->remove('b');
+
+Note that removing things removes I<all instances> of it (this only really
+matters in non-unique sets).
+
+Removing references might catch you off guard:  though you can B<insert>
+object literals, you can't remove them.  That's because each time you create
+a new literal, you get a new reference.  Consider:
+
+  ### Create a set object.
+  $set = Set::Toolkit->new();
+  
+  ### Insert two literal hashrefs.
+  $set->insert({a => 1}, {a => 2});
+
+  ### Remove a literal hashref.  This will have no effect, because the two
+  ### objects (inserted and removed) are I<different references>.
+  $set->remove({a => 1});
+
+However, the following should work instead
+
+  ### Create a set object.
+  $set = Set::Toolkit->new();
+ 
+  ### Create our two hashes.
+  ($hash_a, $hash_b) = ({a=>1}, {a=>2});
+
+  ### Insert the two references.
+  $set->insert($hash_a, $hash_b);
+
+  ### Remove a hash reference.  This will work; it's the same reference as
+  ### what was inserted.
+  $set->remove($hash_a);
+
+Obviously the same applies for all references.
+
 =head2 Set inspection
 
 =head3 B<elements>
@@ -415,6 +487,21 @@ coercion of the set to unordered for the duration of the fetch, only.
 
 The random order of the set relies on perl's treatment of hash keys
 and values.  We're using a hash under the hood.
+
+=head3 B<size>
+
+Returns the size of the set.  This is context sensitive:
+
+  $set = Set::Toolkit->new();
+  $set->is_unique(0);
+  $set->insert(qw(d e a d b e e f));
+
+  ### Prints:  
+  ###   The set size is 8!
+  ###   The set size is 5!
+  print 'The set size is ', $set->size, '!';
+  $set->is_unique(1);
+  print 'The set size is ', $set->size, '!';
 
 =head2 Set introspection
 
