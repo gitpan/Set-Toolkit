@@ -1,8 +1,6 @@
 Set::Toolkit
 
-Version 0.03
-This is the initial release of this module.  Expect it to change.
-
+Version 0.10
 The Set Toolkit intends to provide a broad, robust interface to sets of
 data.  Largely inspired by Set::Object, a default set from the Set Toolkit
 should behave similarly enough to those created by Set::Object that 
@@ -12,7 +10,8 @@ In addition to the set functionality already available around the CPAN,
 the Set Toolkit provides the ability to perform fairly complex, chained
 searches against the set, ordered and unordered considerations, as well
 as the ability to enforce or relax a uniqueness constraint (enforced by
-default).
+default).  Sets can be taken in various contexts, including string, boolean,
+and array(ref).
 
 INSTALLATION
 

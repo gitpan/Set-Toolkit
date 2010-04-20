@@ -2,8 +2,10 @@ package Set::Toolkit;
 use strict;
 use warnings;
 
+use Carp qw(carp cluck croak confess);
+
 use vars qw($VERSION);
-$VERSION = '0.03';
+$VERSION = '0.10';
 
 sub new {
   my $class = shift;
@@ -35,7 +37,6 @@ sub is_unique {
   return $self->__do_boolean('is_unique', 1, @_);
 }
 
-
 ### is=>ro
 sub _data {
   my $self = shift;
@@ -50,30 +51,108 @@ sub _data {
 
 sub size {
   my $self = shift;
-  return scalar(@{$self->_data});
+  my @els = $self->elements();
+  return scalar(@els);
 };
 
 sub _filter_duplicates {
   my $self = shift;
   
   my %lookup = ();
-  @lookup{@{$self->_data}} = @{$self->_data};
-
   my @unique = ();
 
   foreach my $el (@_) {
     if (not exists $lookup{$el}) {
       push @unique, $el;
+      $lookup{$el} = $el;
     }
   }
 
   return @unique;
 }
 
-sub elements {
+
+### Instead of returning the elements themselves, this returns the indecies
+### of the elements.  This has no real use (probably) in the case of non-
+### unique sets, but in unique sets it allows for the data to be manipulated
+### without altering the underlying order.
+sub _element_indecies {
+  my $self = shift;
+
+  if ($self->is_ordered) {
+    return $self->_ordered_element_indecies;
+  } else {
+    return $self->_unordered_element_indecies;
+  }
+}
+
+sub _ordered_element_indecies {
+  my $self = shift;
+
+  ### Grab our data array.
+  my @data = @{$self->_data};
+
+  if ($self->is_unique) {
+    ### Create a lookup of the values in the data set.
+    my %lookup = ();
+    my $size = scalar(@data);
+    
+    ### Loop through the data set pushing unique entries into @unique.
+    my @unique = ();
+    for (my $i = 0; $i < $size; $i++) {
+      if (not exists $lookup{$data[$i]}) {
+        push @unique, $i;
+        $lookup{$data[$i]} = 1;
+      }
+    }
+  
+    ### Now @unique contains a list of indecies of unique elements.  At this point,
+    ### we can just return them.
+    return @unique;
+  } else {
+    ### If we're not looking for unique, since we *are* looking for ordered,
+    ### just create an array that's 0-n (n=last index).
+    return (0 .. (scalar(@data)-1));
+  }
+}
+
+sub _unordered_element_indecies {
   my $self = shift;
   
-  my @elements = @{$self->_data};
+  ### Grab our data array.
+  my @data = @{$self->_data};
+
+  if ($self->is_unique) {
+    ### Create a lookup of the values in the data set.
+    my %lookup = ();
+    my $size = scalar(@data);
+    
+    ### Loop through the data set pushing unique entries into @unique.
+    my @unique = ();
+    for (my $i = 0; $i < $size; $i++) {
+      if (not exists $lookup{$data[$i]}) {
+        push @unique, $i;
+        $lookup{$data[$i]} = 1;
+      }
+    }
+  
+    ### Now @unique contains a list of indecies of unique elements.  At this point,
+    ### we can just return them.
+    @data = @unique;
+  } else {
+    ### If we're not looking for unique, since we *are* looking for ordered,
+    ### just create an array that's 0-n (n=last index).
+    @data = (0 .. (scalar(@data)-1));
+  }
+
+  ### Create our randomizer.
+  my %randomizer = ();
+  @randomizer{@data} = @data;
+  return values(%randomizer);
+}
+
+sub elements {
+  my $self = shift;
 
   if ($self->is_ordered) {
     return $self->ordered_elements;
@@ -84,25 +163,34 @@ sub elements {
 
 sub ordered_elements {
   my $self = shift;
-  return @{$self->_data};
+  if ($self->is_unique) {
+    return $self->_filter_duplicates(@{$self->_data});
+  } else {
+    return @{$self->{_data}}
+  }
 }
 
 sub unordered_elements {
   my $self = shift;
   
+  ### Determine whether we need the unique subset of the data and get the
+  ### relevant entries..
+  my @data = ();
+  if ($self->is_unique) {
+    @data = $self->_filter_duplicates(@{$self->_data});
+  } else {
+    @data = @{$self->_data};
+  }
+
+  ### Randomize our subset and return it.
   my %randomizer = ();
-  @randomizer{@{$self->_data}} = @{$self->_data};
+  @randomizer{@data} = @data;
   return values(%randomizer);
 }
 
 sub insert {
   my $self = shift;
   my @elements = @_;
-
-  if ($self->is_unique) {
-    @elements = $self->_filter_duplicates(@elements); 
-  }
-
 
   push @{$self->_data}, @elements;
 }
@@ -147,6 +235,18 @@ sub remove {
       }
     }
   }
+}
+
+sub first {
+  my $self = shift;
+  my @els = $self->ordered_elements;
+  return $els[0];
+}
+
+sub last {
+  my $self = shift;
+  my @els = $self->ordered_elements;
+  return $els[-1];
 }
 
 ### Returns all matches (a set) or an empty set
@@ -277,13 +377,226 @@ sub _obj_matches_properties {
   return 1;
 }
 
+
+
+######################################################################
+### Overloading
+######################################################################
+
+### Borrowed from Set::Object.
+use overload
+  '""'    => \&as_string,
+  '@{}'   => \&as_array,
+
+  ### In a boolean context, report whether or not we're an empty set.
+  'bool'  => sub { 
+    my $self = shift;
+    return ($self->size) ? 1 : 0;
+  },
+#   '+'   =>    \&op_union,
+#   '*'   =>    \&op_intersection,
+#   '%'   =>    \&op_symm_diff,
+#   '/'   =>    \&op_invert,
+#   '-'   =>    \&difference,
+#   '=='  =>    \&equal,
+#   '!='  =>    \&not_equal,
+#   '<'   =>    \&proper_subset,
+#   '>'   =>    \&proper_superset,
+#   '<='  =>    \&subset,
+#   '>='  =>    \&superset,
+#   '%{}'  =>   sub { my $self = shift;
+#           my %h = {};
+#           tie %h, $self->tie_hash_pkg, [], $self;
+#           \%h },
+  fallback => 1;
+
+
+### In a boolean context, the set reports whether or not it's empty. 
+sub is_empty {
+  my $self = shift;
+  return ($self->size) ? 0 : 1;
+}
+
+### In string context, it should return something like the output of ref() ...
+###   Set::Toolkit(a b c HASH(0x8894880) d e)
+sub as_string {
+    my $self = shift;
+  
+    ### Check if we're calling this as a method on the 
+    eval {
+      my $isa = $self->isa(__PACKAGE__)
+        or die 'Tried to use as_string on something other than a Set::Toolkit object';
+    };
+    croak ($@) if ($@);
+
+    ref($self).'(' . (join ' ', $self->elements) . ')'
+}
+
+### In an array context, it's tied to an array under the hood.
+sub as_array {
+  my $self = shift;
+  my @arr = ();
+  tie @arr, __PACKAGE__.'::TieArray', $self;
+  return \@arr; 
+}
+
+### Allow for array versions.
+sub _tie_array_pkg { "Set::Toolkit::TieArray" };
+{ package Set::Toolkit::TieArray;
+  use Carp qw(carp croak cluck confess);
+
+  sub toolkit {
+    my $self = shift;
+    $self->{toolkit} = $_[0] if (@_);
+    return $self->{toolkit};
+  }
+
+  sub TIEARRAY {
+      my $class = shift;
+      my $toolkit = shift;
+
+      ### Instead of just flattening the data into an array, we keep a copy of
+      ### the toolkit object around.  This means that changes in context (i.e.
+      ### uniqueness or orderedness constraints) are respected in the array
+      ### treatment.
+      my $self = {toolkit => $toolkit};
+
+      ### Return the blessed version.
+      bless $self, $class;
+      return $self;
+  }
+  
+  sub FETCH {
+      my $self = shift;
+      my $index = shift;
+
+      ### Grab a list of the indecies of each element.  This is context
+      ### sensitive.
+      my @indecies = $self->toolkit->_ordered_element_indecies;
+
+      ### The value of $indecies[$index] is the index of the value in the
+      ### original data.
+      return $self->toolkit->_data->[$indecies[$index]];
+  }
+
+  sub STORE {
+      my $self = shift;
+      my $index = shift;
+      my $value = shift;
+  
+      ### Grab a list of the indecies of each element.  This is context
+      ### sensitive.
+      my @indecies = $self->toolkit->_ordered_element_indecies;
+
+      ### If we're setting an element that's bigger than our list, tack it on
+      ### to the end of the toolkit's data array.
+      if ($index >= scalar(@indecies)) {
+        push @{$self->toolkit->_data}, $value; 
+      } else {
+        ### The value of $indecies[$index] is the index of the value in the
+        ### original data.
+        $self->toolkit->_data->[$indecies[$index]];
+      }
+
+  }
+
+  sub FETCHSIZE {
+      my $self = shift;
+      ### Return the size of the elements under consideration (context
+      ### sensitive).
+      return scalar($self->toolkit->elements);
+  }
+
+  sub STORESIZE {
+      my $self = shift;
+      my $count = shift;
+      ### Does nothing.
+      carp("Setting sizes in array context is not yet supported.");
+      return;
+  }
+
+  sub EXTEND {
+    my $self = shift;
+    my $count = shift;
+    ### Does nothing.
+    return;
+  }
+
+  sub EXISTS {
+      my $self = shift;
+      my $index = shift;
+      my @els = $self->toolkit->elements;
+      return (defined $els[$index]) ? 1 : 0;
+  }
+
+  sub DELETE {
+      my $self = shift;
+      my $index = shift;
+      return $self->STORE($index,'');
+  }
+
+  sub PUSH {
+      my $self = shift;
+      $self->toolkit->insert(@_);
+  }
+
+  sub POP {
+      my $self = shift;
+  
+      ### Grab a list of the indecies of each element.  This is context
+      ### sensitive.
+      my @indecies = $self->toolkit->_ordered_element_indecies;
+    
+      my $index = pop(@indecies);
+      my $element = $self->toolkit->_data->[$index];
+    
+      splice(@{$self->toolkit->_data}, $index, 1);
+      return $element;
+  }
+
+  sub CLEAR {
+      my $self = shift;
+      $self->toolkit->_data = [];
+  }
+
+  sub SHIFT {
+      my $self = shift;
+  
+      ### Grab a list of the indecies of each element.  This is context
+      ### sensitive.
+      my @indecies = $self->toolkit->_ordered_element_indecies;
+     
+      my $index = shift(@indecies);
+      my $element = $self->toolkit->_data->[$index];
+    
+      splice(@{$self->toolkit->_data}, $index, 1);
+      return $element;
+  }
+
+  sub UNSHIFT {
+      my $self = shift;
+      my $unshifted = unshift @{$self->toolkit->_data}, @_;
+      return $unshifted;
+  }
+
+  sub SPLICE {
+      my $self = shift;
+      my ($pos, $rem, @els) = @_;
+
+      my @indecies = $self->toolkit->_ordered_element_indecies;
+      my $index = $indecies[$pos];
+      
+      splice(@{$self->toolkit->_data}, $index, $rem, @els);
+  }
+}
+
 =head1 NAME
 
 Set::Toolkit - searchable, orderable, flexible sets of (almost) anything.
 
 =head1 VERSION
 
-Version 0.02
+Version 0.10
 
 =head1 SYNOPSIS
 
@@ -445,7 +758,7 @@ a new literal, you get a new reference.  Consider:
   $set->insert({a => 1}, {a => 2});
 
   ### Remove a literal hashref.  This will have no effect, because the two
-  ### objects (inserted and removed) are I<different references>.
+  ### objects (inserted and removed) are *different references*.
   $set->remove({a => 1});
 
 However, the following should work instead
@@ -488,33 +801,29 @@ coercion of the set to unordered for the duration of the fetch, only.
 The random order of the set relies on perl's treatment of hash keys
 and values.  We're using a hash under the hood.
 
-=head3 B<size>
+=head3 B<is_empty>
 
-Returns the size of the set.  This is context sensitive:
+This method will simply tell you if your set is empty.  Returns 0 or 1.
 
-  $set = Set::Toolkit->new();
-  $set->is_unique(0);
-  $set->insert(qw(d e a d b e e f));
+=head3 B<first> and B<last>
 
-  ### Prints:  
-  ###   The set size is 8!
-  ###   The set size is 5!
-  print 'The set size is ', $set->size, '!';
-  $set->is_unique(1);
-  print 'The set size is ', $set->size, '!';
+The twin methods C<first> and C<last> do not take any arguments, they simply
+report the first or last element of the set.  Be aware that I<these methods imply
+order!>  Consider:
 
-=head2 Set introspection
+  my $set = Set::Toolkit->new();
+  $set->insert(qw(a b c d e f));
+  $set->is_ordered(0);
 
-=head3 B<is_ordered>
+  ### prints something like "c a d e b f"
+  print join(' ', @$set);
 
-Returns a boolean value depending on whether the set is currently considering 
-itself as ordered or unordered.  Also a setter to change the set's context.
+  ### prints "a .. f"
+  print $set->first, ' .. ', $set->last;
 
-=head3 B<is_unique>
-
-Returns a boolean value depending on whether the set is currently considering 
-itself as unique or duplicable (with respect to its elements).  Also a setter
-to change the set's context.
+The first element in an I<unordered> set would be an ephemeral, ever-changing
+value and, therefore, useless (I think =)  So C<first> and C<last> are always
+performed with the I<temporary> constraint that C<$set-E<gt>is_ordered(1)>.
 
 =head3 B<search> and B<find>
 
@@ -621,7 +930,7 @@ We can perform an arbitrarily complex subsearch of these fields, as follows:
 
   ### $homeric_works is now a set object containing the same hash references
   ### as the superset, "works", but only those that matched the first name
-  ### "Homer" and the last name B<undef>.
+  ### "Homer" and the last name *undef*.
   my $homeric_works = $authors->search({
     name => {
       first => 'Homer',
@@ -629,15 +938,15 @@ We can perform an arbitrarily complex subsearch of these fields, as follows:
   });
 
   ### We can get a specific work, "The Oddysey," for example, by a second
-  ### search (or B<find>):
+  ### "search" (or "find"):
 
   ### $oddysey_works is now a set of one.
   my $oddysey_works = $homeric_works->search(title=>'The Odyssey');
 
-  ### We can get the instance (instead of a set) with a B<find>:
+  ### We can get the instance (instead of a set) with a "find":
   my $oddysey_work = $homeric_works->find(title=>'The Odyssey');
 
-  ### Which we could have gotten more easily by issuing a B<find> on the
+  ### Which we could have gotten more easily by issuing a "find" on the
   ### original set:
   my $oddysey_work = $works->find(title=>'The Odyssey');
 
@@ -653,7 +962,7 @@ shouldn't be brutally slow in most cases).
  
 And you can search against multiple values:
 
-  ### Search against title and date to get Ovid's I<Metamorphosis> (yeah, I
+  ### Search against title and date to get Ovid's "Metamorphosis" (yeah, I
   ### realize his was plural, but give me a break here =)
 
   ### Get the set.
@@ -667,6 +976,149 @@ And you can search against multiple values:
     title => 'Metamorphosis',
     date  => 'AD 8'
   );
+
+=head3 B<size>
+
+Returns the size of the set.  This is context sensitive:
+
+  $set = Set::Toolkit->new();
+  $set->is_unique(0);
+  $set->insert(qw(d e a d b e e f));
+
+  ### Prints:  
+  ###   The set size is 8!
+  ###   The set size is 5!
+  print 'The set size is ', $set->size, '!';
+  $set->is_unique(1);
+  print 'The set size is ', $set->size, '!';
+
+=head2 Set introspection
+
+=head3 B<is_ordered>
+
+Returns a boolean value depending on whether the set is currently considering 
+itself as ordered or unordered.  Also a setter to change the set's context.
+
+=head3 B<is_unique>
+
+Returns a boolean value depending on whether the set is currently considering 
+itself as unique or duplicable (with respect to its elements).  Also a setter
+to change the set's context.
+
+=head2 Contextual considerations
+
+=head3 B<Boolean>
+
+Sets can be taken in a boolean context (v0.10).  This can be done implicitly
+by using it in a boolean context.  Empty sets are considered I<false>, while
+sets with elements are considered I<true>.  Thus, in boolean contexts, the set
+answers the question, "Does this set have members?"
+
+  my $set = Set::Toolkit->new();
+  
+  if ($set) {
+    print "The set has members!";
+  } else {
+    print "The set is empty!";
+  }
+
+Under the hood, this just returns
+
+  return ($self->size) ? 1 : 0;
+
+=head4 B<Array>
+
+=over
+
+=item B<as_array>
+
+=back
+
+Sets can be manipulated in an array context as well.  An array context
+enforces set order, since an array without order is just ... well, a set =)
+That means that for all array considerations, B<the set is treated as though
+C<is_ordered(1)>>.  Normal context will return when considering the array as
+a set toolkit.
+
+The examples below use sets with simple alphanumeric scalars.  You can, of
+course, feel free to use objects or refs of any kind.
+
+Let's look at some code.
+ 
+B<Create our set>
+  my $set = Set::Toolkit->new();
+  $set->insert(qw(a b c d e f));
+
+B<scan our set as an array>
+  ### Prints: a, b, c, d, e, f
+  print join(', ', @$set);
+
+B<shift and unshift the set>
+  ### $first is now 'a'.  This is the same as $set->first, except that
+  ### shifting is destructive.
+  my $first = shift @$set;
+
+  ### $first will now be 'x'
+  unshift @$set, 'x';
+  $first = $set->first;
+
+B<push and pop the set>
+  ### $last is now 'f'.  This is the same as $set->last, except that
+  ### popping is destructive.
+  my $last = pop @$set;
+
+  ### $last will now be 'z'
+  push @$set, 'z';
+  $last = $set->last;
+
+B<get and set elements directly>
+  my $before = $set->[3];   ### $set->[3] is 'd'.
+  $set->[3]  = 8;           ### Set it to '8'.
+  my $after  = $set->[3];   ### Now it's '8'.
+
+B<getting the size of the set> (Note that setting the size is not yet
+supported.  You'll get a warning if you try to do it.)
+  ### These are equivalent.
+  my $size   = $set->size;
+  my $scalar = scalar(@$set);
+
+B<splicing a set>
+  ### Remove the letter 'c' (position 2)
+  splice(@$set, 2, 1);
+
+  ### Replace the letter 'e' (now position 3) with 'm', 'n', 'o'
+  splice(@set, 3, 1, qw(m n o));
+
+=head4 B<String> (B<as_string>)
+
+=over
+
+=item B<as_string>
+
+=back
+
+In string context, the array is printed in a manner reminiscent of how refs
+are printed.  For example, a hash C<$hash = {a=E<gt>1}> may print as
+C<HASH(0x9301880)>.  Similarly, a toolkit will print 
+C<Set::Toolkit(...)>, where the ellipsus stands for a space-delimited
+list of the set's contents.
+
+For example,
+
+  my $set = Set::Toolkit->new();
+  $set->insert(qw(a b c));
+
+  ### Prints, for example:  "Set::Toolkit(a c b)"
+  print "$set";
+
+The above example is using an unordered set, so the print order is unordered.
+References will be treated by Perl's native ref stringification:
+
+  my $set = Set::Toolkit->new();
+  $set->insert('a', {b=>2}, 4);
+
+  ### Prints something like: "Set::Toolkit(HASH(0x9301880) 4 a)"
+  print "$set";
 
 =head1 When should this module be used?
 
